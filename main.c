@@ -37,10 +37,32 @@ ht MT;
 
 int main(){
     char temp_input[CONFIG_DIM];
+    int scan_result, acc, old_size, temp;
     scanf("%s", temp_input);
     parse();
-    visualizeTransitions();
+
+    // Read final states
     scanf("%s", temp_input);
+    scan_result = scanf("%d", &acc);
+    while(scan_result){
+        // If a final state is not in table create one
+        if(acc >= MT.size){
+            printf("I need to reallocate the arry before proceeding\n");
+            old_size = MT.size;
+            temp = acc + 1;
+            MT.size = temp;
+            MT.states = (state *)realloc(MT.states, (temp) * sizeof(state));
+            // Initialize transitions to null and final states to FALSE
+            for(old_size; old_size < MT.size; old_size++){
+                MT.states[old_size].transitions = NULL;
+                MT.states[old_size].final = FALSE;
+            }
+        }
+        MT.states[acc].final = TRUE;
+        scan_result = scanf("%d", &acc);
+    }
+
+    visualizeTransitions();
     return 0;
 }
 
@@ -84,7 +106,7 @@ void parse(){
         // Save data
         MT.states[t_start].final = FALSE;
         MT.states[t_start].transitions = new_tr;
-        
+
         // Read input
         scan_result = scanf("%d %c %c %c %d", &t_start, &t_in, &t_out, &t_mv, &t_end);   
     }
@@ -94,7 +116,7 @@ void visualizeTransitions(){
     int i, j;
     transition *temp;
     for(i=0; i<MT.size; i++){
-        printf("State %d:\n", i);
+        printf("State %d%s:\n", i, MT.states[i].final == TRUE ? " - FINAL" : "");
         temp = MT.states[i].transitions;
         j = 0;
         while(temp != NULL){
