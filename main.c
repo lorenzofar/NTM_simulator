@@ -53,9 +53,10 @@ int main(){
             MT.size = temp;
             MT.states = (state *)realloc(MT.states, (temp) * sizeof(state));
             // Initialize transitions to null and final states to FALSE
-            for(old_size; old_size < MT.size; old_size++){
+            while(old_size < MT.size){
                 MT.states[old_size].transitions = NULL;
                 MT.states[old_size].final = FALSE;
+                old_size++;
             }
         }
         MT.states[acc].final = TRUE;
@@ -67,7 +68,7 @@ int main(){
 }
 
 void parse(){
-    int t_start, t_end, scan_result, temp, temp_char, old_size;
+    int t_start, t_end, scan_result, temp, old_size;
     char t_in, t_out, t_mv;
     transition *temp_tr, *new_tr;
     // Initialize MT
@@ -86,8 +87,10 @@ void parse(){
             MT.size = temp;
             MT.states = (state *)realloc(MT.states, temp * sizeof(state));
             // Initialize transitions to null
-            for(old_size; old_size < MT.size; old_size++)
+            while(old_size < MT.size){
                 MT.states[old_size].transitions = NULL;
+                old_size++;
+            }
         }       
 
         // Create new transition according to input
@@ -100,7 +103,7 @@ void parse(){
         
         // Check if already exists a state
         temp_tr = MT.states[t_start].transitions;
-        if(temp_tr != NULL);
+        if(temp_tr != NULL)
             new_tr->next = temp_tr;
 
         // Save data
