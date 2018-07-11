@@ -35,16 +35,37 @@ typedef struct
     state *states;
 } ht;
 
+// Representation of a computation
+typedef struct computation{
+    char *tape_start;
+    char *tape_end;
+    char *cursor;
+    int state;
+    int steps;
+} computation;
+
 // Functions prototypes
 void parse();
 void simulate();
 int listTransitions();
 
-// Queue management prototypes
-void dequeue();
-void enqueue();
+// Queue management 
+typedef struct qn{
+    computation comp;
+    struct qn *prev;
+} qn;
+
+typedef struct queue{
+    qn *head;
+    qn *tail;
+    int size;
+} queue;
+
+qn *dequeue(queue *Q);
+void enqueue(queue *Q, qn *item);
 
 ht MT;
+queue COMP_QUEUE;
 int MAX_MV;
 
 int main()
@@ -166,6 +187,8 @@ void simulate()
 {
     int state_curr = 0, scan_result, i, current_state; // Set the starting state
     char in, *TAPE, *CENTER, *END, *T;
+    const queue *Q_ADDR = &COMP_QUEUE;
+
     const int transitions_count = listTransitions();
     printf("There are %d transitions\n", transitions_count);
 
@@ -180,6 +203,11 @@ void simulate()
     {
         // Set the current state to 0 (default starting state)
         current_state = 0;
+
+        // Initialize computations queue
+        COMP_QUEUE.size = 0;
+        COMP_QUEUE.head = NULL;
+        COMP_QUEUE.tail = NULL;
 
         // Set all the tape cells as blank symbols
         for (i = 0; i <= 2 * MAX_MV; i++)
@@ -212,4 +240,23 @@ void simulate()
 
         in = getchar();
     }
+}
+
+void enqueue(queue *Q, qn *item){
+    if(!Q->size) // empty queue
+        Q->head = item;
+    else
+        Q->tail->prev = item;
+    Q->tail = item; // Insert item as tail
+    Q->size++; // Increase queue size
+    printf("Added item to queue, size is now %d\n", Q->size);
+}
+
+qn *dequeue(queue *Q){
+    qn *item;
+    if(!Q->size) return NULL;
+    item = Q->head; // Get element at head
+    Q->head = item->prev; // Update head
+    Q->size--; // Decrease queue size
+    return item;
 }
