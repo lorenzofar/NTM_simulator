@@ -68,7 +68,7 @@ typedef struct queue{
 } queue;
 
 qn *dequeue(queue *Q);
-void enqueue(queue *Q, qn *item, bool increase);
+void enqueue(queue *Q, qn *item);
 
 ht MT;
 queue COMP_QUEUE;
@@ -89,7 +89,7 @@ int main()
         // If a final state is not in table create one
         if (acc >= MT.size)
         {
-            printf("I need to reallocate the arry before proceeding\n");
+            //printf("I need to reallocate the arry before proceeding\n");
             old_size = MT.size;
             temp = acc + 1;
             MT.size = temp;
@@ -174,34 +174,35 @@ int listTransitions()
     transition *temp;
     for (i = 0; i < MT.size; i++)
     {
-        printf("State %d%s:\n", i, MT.states[i].final == TRUE ? " - FINAL" : "");
+        //printf("State %d%s:\n", i, MT.states[i].final == TRUE ? " - FINAL" : "");
         temp = MT.states[i].transitions;
         j = 0;
         while (temp != NULL)
         {
             count++;
-            printf("tr%d: %c %c %d %d\n", j, temp->in, temp->out, temp->move, temp->target);
+            //printf("tr%d: %c %c %d %d\n", j, temp->in, temp->out, temp->move, temp->target);
             temp = temp->next;
             j++;
         }
-        printf("\n");
+        //printf("\n");
     }
     return count;
 }
 
 void simulate()
 {
-    int i, j, sys_clk, fork_flag, inserted, cursor_offset, limit; // Set the starting state
-    char in, *TAPE, *CENTER, *END, *T, *copy_helper;
+    int i, j, sys_clk, fork_flag, cursor_offset, limit; // Set the starting state
+    const int TAPE_LEN = 2*MAX_MV + 1;
+    char in, TAPE[TAPE_LEN], *CENTER, copy_helper[TAPE_LEN];
     queue *Q_ADDR = &COMP_QUEUE;
-    bool accepted, mv_overflow;
+    bool accepted, mv_overflow;  
 
     qn *q_temp, *q_val;
     transition *t_head, *t_temp;
 
-    TAPE = (char *)malloc((2 * MAX_MV + 2) * sizeof(char)); // initialize tape
-    T = CENTER = TAPE + MAX_MV;                             // Head that points to the center of tape
-    END = TAPE + 2 * MAX_MV + 1;
+    //TAPE = (char *)malloc(TAPE_LEN * sizeof(char)); // initialize tape
+    //copy_helper = (char *)malloc(TAPE_LEN * sizeof(char)); // initialize copy helper
+    CENTER = TAPE + MAX_MV;                             // Head that points to the center of tape
 
     in = getchar();
     while (in != EOF)
@@ -214,7 +215,7 @@ void simulate()
         COMP_QUEUE.tail = NULL;
 
         // Set all the tape cells as blank symbols
-        for (i = 0; i <= 2 * MAX_MV; i++)
+        for (i = 0; i < TAPE_LEN; i++)
             TAPE[i] = '_';
 
         // Copy the input to the tape
@@ -225,7 +226,7 @@ void simulate()
             i++;
             in = getchar();
         }
-        *END = '\0'; // Add string terminator
+        CENTER[i] = '\0'; // Add string terminator
 
         // Finish reading the string if there are trailing characters
         if (in != '\n')
@@ -233,11 +234,12 @@ void simulate()
                 in = getchar();
 
         // Print tape content
-        i = 0;
-        while (i <= 2 * MAX_MV)
+        /*i = 0;
+        while (i <= TAPE_LEN - 1)
             printf("%c", TAPE[i++]);
         
         printf("\n\n");
+        */
 
         // Simulate
         // The head is T, which moves according to parsed transitions
@@ -245,20 +247,15 @@ void simulate()
         // Add first computation (default) to the computation queue
         q_temp = (qn *)malloc(sizeof(qn));
         q_temp->comp.tape_start = TAPE;
-        q_temp->comp.cursor = T;
+        q_temp->comp.cursor = CENTER;
         q_temp->comp.state = 0;
         q_temp->comp.steps = 0;
-        enqueue(Q_ADDR, q_temp, TRUE);
+        enqueue(Q_ADDR, q_temp);
 
         accepted = FALSE;
         mv_overflow = FALSE;
 
-        inserted = 0;
         while(COMP_QUEUE.size && sys_clk < MAX_MV && !accepted){
-
-            // Update size of computations queue
-            COMP_QUEUE.size += inserted;
-            inserted = 0;
 
             sys_clk++;
             //printf("Phase %d\n", sys_clk);
@@ -285,7 +282,8 @@ void simulate()
                      // (it will remain in non-acceptance state forever)
                     accepted = MT.states[q_val->comp.state].final;
                     // Delete computation
-                    free(q_val->comp.tape_start);
+                    //printf("I need to delete computation at %p, tape starts at %p\n", q_val, q_val->comp.tape_start);
+                    //free(q_val->comp.tape_start);
                     free(q_val);
                     
                     if(accepted)
@@ -302,20 +300,18 @@ void simulate()
 
                     // Back up the tape content and the cursor if I need to fork
                     if(fork_flag>1){
-                        copy_helper = (char *)malloc((2 * MAX_MV + 2) * sizeof(char));                        
-                        strcpy(copy_helper, q_val->comp.tape_start);
+                        memcpy(copy_helper, q_val->comp.tape_start, TAPE_LEN);
                         cursor_offset = q_val->comp.cursor - q_val->comp.tape_start;
-                        //printf("cursor offset: %d\n", cursor_offset);
                     }
 
                     *(q_val->comp.cursor) = t_temp->out;
                     q_val->comp.cursor += ((int)t_temp->move - 1);
                     q_val->comp.state = t_temp->target;
                     //printf("The transition led me to state %d\n", q_val->comp.state);
-                    q_val->comp.steps++;
+                    q_val->comp.steps++; // Update computation steps
                     t_temp = t_temp->next; // go ahead
 
-                    enqueue(Q_ADDR, q_val, TRUE);
+                    enqueue(Q_ADDR, q_val);
 
                     j = 1; // count inserted transitions
                     while(j < fork_flag){
@@ -327,30 +323,18 @@ void simulate()
                         // Fork computation
                         // Copy the tape
                         q_temp = (qn *)malloc(sizeof(qn)); // Create new computation
-                        q_temp->comp.tape_start = (char *)malloc((2 * MAX_MV + 2) * sizeof(char));
-                        strcpy(q_temp->comp.tape_start, copy_helper); // copy input tape
+                        q_temp->comp.tape_start = (char *)malloc(TAPE_LEN * sizeof(char));
+                        //printf("Created tape at %p\n", q_temp->comp.tape_start);
+                        memcpy(q_temp->comp.tape_start, copy_helper, TAPE_LEN); // copy input tape
                         //printf("The cursor offset is %d\n", cursor_offset);
                         q_temp->comp.cursor = q_temp->comp.tape_start + cursor_offset + ((int)t_temp->move - 1); // calculate cursor offset and apply movement
                         q_temp->comp.steps = q_val->comp.steps; // steps of father are already incremented by 1
                         q_temp->comp.state = t_temp->target;
                         //printf("The trans led me to state %d\n", q_temp->comp.state);
-                        enqueue(Q_ADDR, q_temp, FALSE);
-                        inserted++;
+                        enqueue(Q_ADDR, q_temp);
                         t_temp = t_temp->next;
                         j++;
                     }
-
-                    // Free copy_helper
-                    //free(copy_helper);
-
-                    // Writing on the tape should be performed during fork
-
-                    // Evaluate the current computation
-                    // Write to the tape
-                    // Move the cursor
-                    // Set new state
-                    
-                    // Put the computation back in the queue (only if it can proceed)
                     
                 }
             }
@@ -380,17 +364,20 @@ void simulate()
 
         // FREE MEMORY!
     }
+
+    //free(&TAPE);
+    //free(&copy_helper);
+
 }
 
-void enqueue(queue *Q, qn *item, bool increase){
+void enqueue(queue *Q, qn *item){
     item->prev = NULL;
     if(!Q->size) // empty queue
         Q->head = item;
     else
         Q->tail->prev = item;
     Q->tail = item; // Insert item as tail
-    if(increase)
-        Q->size++; // Increase queue size
+    Q->size++; // Increase queue size
 }
 
 qn *dequeue(queue *Q){
