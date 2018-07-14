@@ -195,7 +195,7 @@ int listTransitions()
 void simulate()
 {
     int i, j, sys_clk, fork_flag, cursor_offset, limit; // Set the starting state
-    const int TAPE_LEN = 2*MAX_MV + 1;
+    const int TAPE_LEN = 2*MAX_MV + 2;
     char in, *TAPE, *CENTER, *copy_helper;
     queue COMP_QUEUE;
     bool accepted, mv_overflow;  
@@ -234,7 +234,7 @@ void simulate()
             i++;
             in = getchar();
         }
-        CENTER[i] = '\0'; // Add string terminator
+        CENTER[TAPE_LEN-1] = '\0'; // Add string terminator
 
         // Finish reading the string if there are trailing characters
         if (in != '\n' && in != -1) while (in != '\n' && in != -1) in = getchar();
