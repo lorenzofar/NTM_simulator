@@ -158,6 +158,7 @@ void parse()
             while (old_size < MT.size)
             {
                 MT.states[old_size].transitions = NULL;
+                MT.states[old_size].final = FALSE;
                 old_size++;
             }
         }
@@ -249,7 +250,8 @@ void simulate()
                 in = q_val->comp.tape[q_val->comp.offset]; // Read tape
                 
                 fork_flag = 0; // Reset fork flag
-                t_temp = MT.states[q_val->comp.state].transitions; // Get state transations
+                if(q_val->comp.state >= MT.size) t_temp = NULL;
+                else t_temp = MT.states[q_val->comp.state].transitions; // Get state transations
                 // Count how many transitions can handle the input
                 while(t_temp != NULL){
                     if(t_temp->in == in) fork_flag++; 
@@ -265,7 +267,7 @@ void simulate()
                 if(!fork_flag){
                     // No transition can handle the input. 
                     // Check if I am in a final state
-                    accepted = MT.states[q_val->comp.state].final;
+                    accepted = q_val->comp.state >= MT.size ? FALSE : MT.states[q_val->comp.state].final;
                     // Then delete memory used by computation
                     free(q_val->comp.tape);
                     free(q_val);                    
