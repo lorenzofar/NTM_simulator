@@ -37,14 +37,14 @@ typedef struct state
 // Table to store data
 typedef struct
 {
-    int size;
+    unsigned long size;
     state *states;
 } ht;
 
 // Representation of a computation
 typedef struct computation{
     char *tape;
-    int state;
+    unsigned long state;
     int steps;
     int offset;
 } computation;
@@ -63,19 +63,20 @@ typedef struct qn{
 typedef struct queue{
     qn *head;
     qn *tail;
-    int size;
+    unsigned long size;
 } queue;
 
 qn *dequeue(queue *Q);
 void enqueue(queue *Q, qn *item);
 
 ht MT; // Define the machine as a global variable
-int MAX_MV; // Container for maximum steps
+unsigned long MAX_MV; // Container for maximum steps
 
 int main()
 {
     char temp_input[CONFIG_DIM]; // Buffer to recognize input delimiters
-    int scan_result, acc, old_size, temp;
+    int scan_result;
+    unsigned long acc, old_size, temp;
 
     // Start reading input and parse transitions
     scanf("%s", temp_input);
@@ -83,7 +84,7 @@ int main()
 
     // Read final states
     scanf("%s", temp_input);
-    scan_result = scanf("%d", &acc);
+    scan_result = scanf("%lu", &acc);
     while (scan_result)
     {
         // If a final state is not in table create one
@@ -102,12 +103,12 @@ int main()
             }
         }
         MT.states[acc].final = TRUE;
-        scan_result = scanf("%d", &acc);
+        scan_result = scanf("%lu", &acc);
     }
 
     // Read maximum number of moves
     scanf("%s", temp_input);
-    scanf("%d", &MAX_MV);
+    scanf("%lu", &MAX_MV);
 
     //Start reading strings
     scanf("%s\n", temp_input);
@@ -117,7 +118,8 @@ int main()
 
 void parse()
 {
-    int t_start, t_end, scan_result, temp, old_size;
+    unsigned long t_start, t_end, temp, old_size; 
+    int scan_result;
     char t_in, t_out, t_mv;
     transition *temp_tr, *new_tr;
 
@@ -127,7 +129,7 @@ void parse()
     MT.states[0].transitions = NULL;
 
     // Read input until end
-    scan_result = scanf("%d %c %c %c %d", &t_start, &t_in, &t_out, &t_mv, &t_end);
+    scan_result = scanf("%lu %c %c %c %lu", &t_start, &t_in, &t_out, &t_mv, &t_end);
     while (scan_result)
     {
         // Check if the size of the ht is enough
@@ -164,48 +166,48 @@ void parse()
         MT.states[t_start].transitions = new_tr;
 
         // Read input
-        scan_result = scanf("%d %c %c %c %d", &t_start, &t_in, &t_out, &t_mv, &t_end);
+        scan_result = scanf("%lu %c %c %c %lu", &t_start, &t_in, &t_out, &t_mv, &t_end);
     }
 }
 
 void simulate()
 {
-    int i, j, sys_clk, fork_flag, cursor_offset, limit;
-    const int TAPE_LEN = 2 * MAX_MV + 1;
-    char in, *TAPE, *CENTER, *copy_helper;
+    unsigned long i, j, sys_clk, cursor_offset, limit, fork_flag;
+    const unsigned long TAPE_LEN = 2 * MAX_MV + 1;
+    char in, *CENTER, *copy_helper;
     queue COMP_QUEUE;
     bool accepted, mv_overflow;  
     qn *q_temp, *q_val;
     transition *t_temp;
 
-COMP_QUEUE.size = 0;
-        COMP_QUEUE.head = COMP_QUEUE.tail = NULL;
+    //TODO: I need to find a way to manage tape
 
      // Initialize tape (it will only be used the first time to read the input)
-    TAPE = (char *)malloc(TAPE_LEN * sizeof(char));
     // initialize copy helper to backup tape content during forks
-    copy_helper = (char *)malloc(TAPE_LEN * sizeof(char));
-    CENTER = TAPE + MAX_MV;                             
+    copy_helper = (char *)malloc(TAPE_LEN * sizeof(char));                  
     
     in = getchar();
     while (in != EOF)
     {
-        // Free memory used by previous computations queue
-        while(COMP_QUEUE.size){
-            q_temp = dequeue(&COMP_QUEUE);
-            free(q_temp->comp.tape);
-            free(q_temp);
-        }
         // Initialize computations queue
         COMP_QUEUE.size = 0;
         COMP_QUEUE.head = COMP_QUEUE.tail = NULL;
         
+        // Add first computation (root) to the computations queue
+        q_temp = (qn *)malloc(sizeof(qn)); // Allocate memory to store computation
+        q_temp->comp.tape = (char *)malloc(TAPE_LEN * sizeof(char)); // Allocate memory to store tape        
+        q_temp->comp.offset = MAX_MV; // Initialize cursor
+        q_temp->comp.state = 0; // Set starting state
+        q_temp->comp.steps = 0; // Initialize steps counter
+        enqueue(&COMP_QUEUE, q_temp); // Add computation to queue
+
         // Set all the tape cells as blank symbols
         for (i = 0; i < TAPE_LEN; i++)
-            TAPE[i] = '_';
+            q_temp->comp.tape[i] = '_';
 
         // Copy the input to the tape
         i = 0;
+        CENTER = q_temp->comp.tape + MAX_MV;
         while (in != '\n' && i <= MAX_MV)
         {
             if(in != -1) CENTER[i] = in; // Avoid putting invalid characters in tape
@@ -218,15 +220,6 @@ COMP_QUEUE.size = 0;
 
         accepted = FALSE;
         mv_overflow = FALSE;
-
-        // Add first computation (root) to the computations queue
-        q_temp = (qn *)malloc(sizeof(qn)); // Allocate memory to store computation
-        q_temp->comp.tape = (char *)malloc(TAPE_LEN * sizeof(char)); // Allocate memory to store tape
-        memcpy(q_temp->comp.tape, TAPE, TAPE_LEN); // Copy tape content
-        q_temp->comp.offset = MAX_MV; // Initialize cursor
-        q_temp->comp.state = 0; // Set starting state
-        q_temp->comp.steps = 0; // Initialize steps counter
-        enqueue(&COMP_QUEUE, q_temp); // Add computation to queue
 
         sys_clk = 0; // Initialize system clock
         // Repeat until there are some computations in queue and the moves limit has not been reached
@@ -315,11 +308,17 @@ COMP_QUEUE.size = 0;
         // No computation is left in queue and all have ended before the limit:
         else printf("0\n");
 
+        // Free memory used by previous computations queue
+        while(COMP_QUEUE.size){
+            q_temp = dequeue(&COMP_QUEUE);
+            free(q_temp->comp.tape);
+            free(q_temp);
+        }
+
         in = getchar();
     }
 
     // Free memory
-    free(TAPE);
     free(copy_helper);
 }
 
