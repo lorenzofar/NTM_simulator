@@ -77,6 +77,7 @@ int main()
     char temp_input[CONFIG_DIM]; // Buffer to recognize input delimiters
     int scan_result;
     unsigned long acc, old_size, temp;
+    transition *t_a, *t_b;
 
     // Start reading input and parse transitions
     scanf("%s", temp_input);
@@ -113,6 +114,20 @@ int main()
     //Start reading strings
     scanf("%s\n", temp_input);
     simulate();
+
+    // Free memory used by transitions
+    temp = 0;
+    while(temp < MT.size){
+        t_a = MT.states[temp].transitions;
+        while(t_a != NULL){            
+            t_b = t_a->next;
+            free(t_a);
+            t_a = t_b;
+        }    
+        temp++;
+    }
+    // Free memory used by states
+    free(MT.states);
     return 0;
 }
 
