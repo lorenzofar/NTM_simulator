@@ -1,14 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 
 #define CONFIG_DIM 3
-
-typedef enum
-{
-    FALSE, 
-    TRUE
-} bool;
+#define BLANK '_'
 
 // Define directions as enum in order to use them in sums
 typedef enum{
@@ -37,21 +33,30 @@ typedef struct state
 // Table to store data
 typedef struct
 {
-    unsigned long size;
+    int size;
     state *states;
 } ht;
 
+// Tape representation
+typedef struct tape_cell{
+    struct tape_cell *left;
+    struct tape_cell *right;
+    char val;
+} tape_cell;
+
 // Representation of a computation
 typedef struct computation{
-    char *tape;
-    unsigned long state;
+    tape_cell *tape;
+    int state;
     int steps;
-    int offset;
 } computation;
 
 // Functions prototypes
 void parse();
 void simulate();
+void copy_tape(tape_cell *dest, tape_cell *src);
+void print_tape(tape_cell *tape);
+void delete_tape(tape_cell *tape);
 void fork_computation();
 
 // Computation queue
@@ -63,20 +68,20 @@ typedef struct qn{
 typedef struct queue{
     qn *head;
     qn *tail;
-    unsigned long size;
+    int size;
 } queue;
 
 qn *dequeue(queue *Q);
 void enqueue(queue *Q, qn *item);
 
 ht MT; // Define the machine as a global variable
-unsigned long MAX_MV; // Container for maximum steps
+int MAX_MV; // Container for maximum steps
 
 int main()
 {
     char temp_input[CONFIG_DIM]; // Buffer to recognize input delimiters
     int scan_result;
-    unsigned long acc, old_size, temp;
+    int acc, old_size, temp;
     transition *t_a, *t_b;
 
     // Start reading input and parse transitions
@@ -85,7 +90,7 @@ int main()
 
     // Read final states
     scanf("%s", temp_input);
-    scan_result = scanf("%lu", &acc);
+    scan_result = scanf("%d", &acc);
     while (scan_result)
     {
         // If a final state is not in table create one
@@ -95,21 +100,21 @@ int main()
             temp = acc + 1;
             MT.size = temp;
             MT.states = (state *)realloc(MT.states, (temp) * sizeof(state));
-            // Initialize transitions to null and final states to FALSE
+            // Initialize transitions to null and final states to false
             while (old_size < MT.size)
             {
                 MT.states[old_size].transitions = NULL;
-                MT.states[old_size].final = FALSE;
+                MT.states[old_size].final = false;
                 old_size++;
             }
         }
-        MT.states[acc].final = TRUE;
-        scan_result = scanf("%lu", &acc);
+        MT.states[acc].final = true;
+        scan_result = scanf("%d", &acc);
     }
 
     // Read maximum number of moves
     scanf("%s", temp_input);
-    scanf("%lu", &MAX_MV);
+    scanf("%d", &MAX_MV);
 
     //Start reading strings
     scanf("%s\n", temp_input);
@@ -133,8 +138,7 @@ int main()
 
 void parse()
 {
-    unsigned long t_start, t_end, temp, old_size; 
-    int scan_result;
+    int t_start, t_end, temp, old_size, scan_result;
     char t_in, t_out, t_mv;
     transition *temp_tr, *new_tr;
 
@@ -144,7 +148,7 @@ void parse()
     MT.states[0].transitions = NULL;
 
     // Read input until end
-    scan_result = scanf("%lu %c %c %c %lu", &t_start, &t_in, &t_out, &t_mv, &t_end);
+    scan_result = scanf("%d %c %c %c %d", &t_start, &t_in, &t_out, &t_mv, &t_end);
     while (scan_result)
     {
         // Check if the size of the ht is enough
@@ -158,7 +162,7 @@ void parse()
             while (old_size < MT.size)
             {
                 MT.states[old_size].transitions = NULL;
-                MT.states[old_size].final = FALSE;
+                MT.states[old_size].final = false;
                 old_size++;
             }
         }
@@ -178,29 +182,24 @@ void parse()
             new_tr->next = temp_tr;
 
         // Save data in ht
-        MT.states[t_start].final = FALSE;
+        MT.states[t_start].final = false;
         MT.states[t_start].transitions = new_tr;
 
         // Read input
-        scan_result = scanf("%lu %c %c %c %lu", &t_start, &t_in, &t_out, &t_mv, &t_end);
+        scan_result = scanf("%d %c %c %c %d", &t_start, &t_in, &t_out, &t_mv, &t_end);
     }
 }
 
 void simulate()
 {
-    unsigned long i, j, sys_clk, cursor_offset, limit, fork_flag;
-    const unsigned long TAPE_LEN = 2 * MAX_MV + 1;
-    char in, *CENTER, *copy_helper;
+    int i, j, cursor_helper, sys_clk, limit, fork_flag;
+    char in;
     queue COMP_QUEUE;
     bool accepted, mv_overflow;  
     qn *q_temp, *q_val;
     transition *t_temp;
 
-    //TODO: I need to find a way to manage tape
-
-     // Initialize tape (it will only be used the first time to read the input)
-    // initialize copy helper to backup tape content during forks
-    copy_helper = (char *)malloc(TAPE_LEN * sizeof(char));                  
+    tape_cell *cell, *copy_helper, *cursor;          
     
     in = getchar();
     while (in != EOF)
@@ -211,31 +210,33 @@ void simulate()
         
         // Add first computation (root) to the computations queue
         q_temp = (qn *)malloc(sizeof(qn)); // Allocate memory to store computation
-        q_temp->comp.tape = (char *)malloc(TAPE_LEN * sizeof(char)); // Allocate memory to store tape        
-        q_temp->comp.offset = MAX_MV; // Initialize cursor
+        q_temp->comp.tape = (tape_cell *)malloc(sizeof(tape_cell)); // Allocate memory to store tape (just one tape)         
+        q_temp->comp.tape->left = q_temp->comp.tape->right = NULL;
         q_temp->comp.state = 0; // Set starting state
         q_temp->comp.steps = 0; // Initialize steps counter
         enqueue(&COMP_QUEUE, q_temp); // Add computation to queue
 
-        // Set all the tape cells as blank symbols
-        for (i = 0; i < TAPE_LEN; i++)
-            q_temp->comp.tape[i] = '_';
-
-        // Copy the input to the tape
+        // While reading tape, every time i read a character allocate a new tape cell
+        // If I exceed the maximum number of moves, stop reading (read trailing characters then)
         i = 0;
-        CENTER = q_temp->comp.tape + MAX_MV;
-        while (in != '\n' && i <= MAX_MV)
-        {
-            if(in != -1) CENTER[i] = in; // Avoid putting invalid characters in tape
+        cursor = q_temp->comp.tape;
+        while(in != '\n' && in != -1 && i<=MAX_MV){
+            cursor->val = in;
+            cell = (tape_cell *)malloc(sizeof(tape_cell));
+            cell->val = BLANK;
+            cell->right = NULL;
+            cell->left = cursor; // Point to the current cursor
+            cursor->right = cell;
+            cursor = cell;
             i++;
             in = getchar();
         }
-
+        //print_tape(q_temp->comp.tape);
         // Finish reading the string if there are trailing characters
         if (in != '\n' && in != -1) while (in != '\n' && in != -1) in = getchar();        
 
-        accepted = FALSE;
-        mv_overflow = FALSE;
+        accepted = false;
+        mv_overflow = false;
 
         sys_clk = 0; // Initialize system clock
         // Repeat until there are some computations in queue and the moves limit has not been reached
@@ -247,7 +248,8 @@ void simulate()
             limit = COMP_QUEUE.size;
             for(i=0; i<limit; i++){                   
                 q_val = dequeue(&COMP_QUEUE); // Get a computation from queue
-                in = q_val->comp.tape[q_val->comp.offset]; // Read tape
+
+                in = q_val->comp.tape->val; // Get the character under the cursor
                 
                 fork_flag = 0; // Reset fork flag
                 if(q_val->comp.state >= MT.size) t_temp = NULL;
@@ -260,18 +262,19 @@ void simulate()
 
                 // Check if I reached the limit of simulation steps
                 if(q_val->comp.steps > MAX_MV){ 
-                    mv_overflow = TRUE;
+                    mv_overflow = true;
                     goto simulation_end;
                 }
 
                 if(!fork_flag){
                     // No transition can handle the input. 
                     // Check if I am in a final state
-                    accepted = q_val->comp.state >= MT.size ? FALSE : MT.states[q_val->comp.state].final;
-                    // Then delete memory used by computation
-                    free(q_val->comp.tape);
-                    free(q_val);                    
-                    if(accepted == TRUE) goto simulation_end; // If I am in a final state end simulation
+                    accepted = q_val->comp.state >= MT.size ? false : MT.states[q_val->comp.state].final;
+
+                    delete_tape(q_val->comp.tape); // Delete tape of computation                    
+                    free(q_val); // Delete computation
+
+                    if(accepted == true) goto simulation_end; // If I am in a final state end simulation
                 }
                 else{
                     // The first transition I encounter is the evolution of the current one
@@ -281,12 +284,39 @@ void simulate()
                     while(t_temp != NULL && t_temp->in != in) t_temp = t_temp->next;
                     // Back up the tape content and the cursor if I need to fork
                     if(fork_flag > 1){
-                        memcpy(copy_helper, q_val->comp.tape, TAPE_LEN);
-                        cursor_offset = q_val->comp.offset;
+                        copy_helper = (tape_cell *)malloc(sizeof(tape_cell));
+                        copy_tape(copy_helper, q_val->comp.tape);
                     }
 
-                    q_val->comp.tape[q_val->comp.offset] = t_temp->out; // Write tape
-                    q_val->comp.offset += ((int)t_temp->move -1); // Move cursor
+                    q_val->comp.tape->val = t_temp->out; // Write tape
+
+                    // Check direction
+                    // If I remain still, do nothing
+                    // Check if I am at the edge of the tape
+                    // In case allocate memory to store a new cell
+                    if(t_temp->move == 0){ // LEFT
+                        if(q_val->comp.tape->left == NULL){
+                            cell = (tape_cell *)malloc(sizeof(tape_cell));
+                            cell->right = q_val->comp.tape;
+                            cell->left = NULL;
+                            cell->val = BLANK;
+                            q_val->comp.tape->left = cell;
+                        }
+                        q_val->comp.tape = q_val->comp.tape->left; // Move cursor
+                    }   
+                    else if(t_temp->move == 2){ // RIGHT
+                        if(q_val->comp.tape->right == NULL){
+                            cell = (tape_cell *)malloc(sizeof(tape_cell));
+                            cell->left = q_val->comp.tape;
+                            cell->right = NULL;
+                            cell->val = BLANK;
+                            q_val->comp.tape->right = cell;
+                        }
+                        q_val->comp.tape = q_val->comp.tape->right; // Move cursor
+                    }
+                    /*printf("Simulated tr: %d->%d\t%c->%c, %d\n",q_temp->comp.state, t_temp->target, t_temp->in, t_temp->out, t_temp->move);
+                    print_tape(q_val->comp.tape);*/
+
                     q_val->comp.state = t_temp->target; // Change state
                     q_val->comp.steps++; // Update computation steps
                     t_temp = t_temp->next; // Go to next transition
@@ -297,21 +327,51 @@ void simulate()
                     // Fork the remaining transitions
                     for(j=1; j<fork_flag; j++){ 
                         while(t_temp != NULL && t_temp->in != in) t_temp = t_temp->next; // Find suitable transition
-                        
+                               
                         q_temp = (qn *)malloc(sizeof(qn)); // Create new computation
-                        q_temp->comp.tape = (char *)malloc(TAPE_LEN * sizeof(char)); // Allocate memory for forked tape
-                        memcpy(q_temp->comp.tape, copy_helper, TAPE_LEN); // Copy input tape
-                        q_temp->comp.steps = q_val->comp.steps; // (Steps of father are already incremented by 1)
-                        q_temp->comp.offset = cursor_offset; // Move cursor according to previous cursor offset
+                        q_temp->comp.tape = (tape_cell *)malloc(sizeof(tape_cell)); // Allocate memory for forked tape                        
+                        copy_tape(q_temp->comp.tape, copy_helper); // Copy input tape
 
-                        q_temp->comp.tape[q_temp->comp.offset] = t_temp->out; // Write to tape
-                        q_temp->comp.offset += ((int)t_temp->move - 1); // Move cursor                        
+                        q_temp->comp.tape->val = t_temp->out; // Write to tape
+
+                        q_temp->comp.steps = q_val->comp.steps; // (Steps of father are already incremented by 1
+                        
+                        // Move cursor, and also check wheter I need to allocate new memory
+                        if(t_temp->move == 0){ // LEFT
+                            if(q_temp->comp.tape->left == NULL){
+                                cell = (tape_cell *)malloc(sizeof(tape_cell));
+                                cell->left = NULL;
+                                cell->val = BLANK;
+                                cell->right = q_temp->comp.tape;
+                                q_temp->comp.tape->left = cell;
+                            }
+                            q_temp->comp.tape = q_temp->comp.tape->left; // Move cursor
+                        }   
+                        else if(t_temp->move == 2){ // RIGHT
+                            if(q_temp->comp.tape->right == NULL){
+                                cell = (tape_cell *)malloc(sizeof(tape_cell));
+                                cell->right = NULL;
+                                cell->val = BLANK;
+                                cell->left = q_temp->comp.tape;
+                                q_temp->comp.tape->right = cell;
+                            }
+                            q_temp->comp.tape = q_temp->comp.tape->right; // Move cursor
+                        }
+                        /*printf("Simulated tr: %d->%d\t%c->%c, %d\n",q_temp->comp.state, t_temp->target, t_temp->in, t_temp->out, t_temp->move);
+                        print_tape(q_temp->comp.tape);*/
+
                         q_temp->comp.state = t_temp->target; // Change state                        
+                        
+                        /*printf("Added computation\t");
+                        print_tape(q_temp->comp.tape);
+                        printf("\n");*/
 
                         // Put computation in queue
                         enqueue(&COMP_QUEUE, q_temp);
                         t_temp = t_temp->next; // Go to next transition
-                    }                    
+                    }  
+                    
+                    if(fork_flag > 1) delete_tape(copy_helper); // Free memory
                 }
             }
         }
@@ -328,15 +388,66 @@ void simulate()
         // Free memory used by previous computations queue
         while(COMP_QUEUE.size){
             q_temp = dequeue(&COMP_QUEUE);
-            free(q_temp->comp.tape);
+            delete_tape(q_temp->comp.tape);
             free(q_temp);
         }
 
         in = getchar();
     }
+}
 
-    // Free memory
-    free(copy_helper);
+void copy_tape(tape_cell *dest, tape_cell *src){ 
+    tape_cell *temp_s, *temp_d, *new;
+    dest->val = src->val;
+    dest->left = dest->right = NULL;
+    temp_s = src->left;
+    temp_d = dest;
+    while(temp_s != NULL){
+        new = (tape_cell *)malloc(sizeof(tape_cell)); // Allocate new cell
+        new->left = NULL; // Set left / right pointers
+        new->right = temp_d;
+        new->val = temp_s->val; // Write content
+        temp_d->left = new;
+        temp_d = temp_d->left; // Move
+        temp_s = temp_s->left;
+    }
+    temp_s = src->right;
+    temp_d = dest;
+    while(temp_s != NULL){  
+        new = (tape_cell *)malloc(sizeof(tape_cell)); // Allocate new cell
+        new->right = NULL; // Set left / right pointers
+        new->left = temp_d;
+        new->val = temp_s->val; // Write content
+        temp_d->right = new;
+        temp_d = temp_d->right; // Move
+        temp_s = temp_s->right;
+    }
+}
+
+void print_tape(tape_cell *tape){ 
+    tape_cell *temp;
+    /*temp = tape->left;
+    while(temp != NULL){
+        printf("%c", temp->val);
+        temp = temp->left;
+    }*/
+    temp = tape;
+    while(temp != NULL){  
+        printf("%c", temp->val);
+        temp = temp->right;
+    }
+    printf("\n");
+}
+
+void delete_tape(tape_cell *tape){
+    tape_cell *temp, *helper;
+    temp = tape;
+    while(temp->left != NULL) temp = temp->left; // Get the leftmost element
+    while(temp != NULL){
+        helper = temp->right;
+        free(temp);
+        temp = helper;
+    }
 }
 
 // Functions to manage queue
