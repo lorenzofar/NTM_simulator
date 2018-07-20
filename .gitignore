@@ -1,2 +1,2 @@
-*.txt
-*.out
+*
+!main.c
