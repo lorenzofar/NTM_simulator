@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include <string.h>
 
 #define CONFIG_DIM 3
 #define BLANK '_'
@@ -232,7 +231,7 @@ void simulate()
             i++;
             in = getchar();
         }
-        
+
         // Finish reading the string if there are trailing characters
         if (in != '\n' && in != -1) while (in != '\n' && in != -1) in = getchar();        
 
