@@ -23,18 +23,11 @@ typedef struct transition
     struct transition *next;
 } transition;
 
-// State representation
-typedef struct state
-{
-    bool final;
-    transition *transitions;
-} state;
-
 // Table to store data
 typedef struct
 {
     int size;
-    state *states;
+    transition **states;
 } ht;
 
 // Tape representation
@@ -57,8 +50,8 @@ typedef struct computation
 void parse();
 void simulate();
 void copy_tape(tape_cell *dest, tape_cell *src);
-void print_tape(tape_cell *tape);
 void delete_tape(tape_cell *tape);
+bool check_final(int state);
 void fork_computation();
 
 // Computation queue
@@ -75,11 +68,18 @@ typedef struct queue
     int size;
 } queue;
 
+typedef struct f_state
+{
+    int val;
+    struct f_state *next;
+} f_state;
+
 qn *dequeue(queue *Q);
 void enqueue(queue *Q, qn *item);
 
-ht MT;      // Define the machine as a global variable
-int MAX_MV; // Container for maximum steps
+ht MT;                  // Define the machine as a global variable
+int MAX_MV;             // Container for maximum steps
+f_state *finals = NULL; // List of final states
 
 int main()
 {
@@ -87,6 +87,7 @@ int main()
     int scan_result;
     int acc, old_size, temp;
     transition *t_a, *t_b;
+    f_state *temp_final;
 
     // Start reading input and parse transitions
     scanf("%s", temp_input);
@@ -97,22 +98,10 @@ int main()
     scan_result = scanf("%d", &acc);
     while (scan_result)
     {
-        // If a final state is not in table create one
-        if (acc >= MT.size)
-        {
-            old_size = MT.size;
-            temp = acc + 1;
-            MT.size = temp;
-            MT.states = (state *)realloc(MT.states, (temp) * sizeof(state));
-            // Initialize transitions to null and final states to false
-            while (old_size < MT.size)
-            {
-                MT.states[old_size].transitions = NULL;
-                MT.states[old_size].final = false;
-                old_size++;
-            }
-        }
-        MT.states[acc].final = true;
+        temp_final = (f_state *)malloc(sizeof(f_state));
+        temp_final->val = acc;
+        temp_final->next = finals;
+        finals = temp_final;
         scan_result = scanf("%d", &acc);
     }
 
@@ -128,7 +117,7 @@ int main()
     temp = 0;
     while (temp < MT.size)
     {
-        t_a = MT.states[temp].transitions;
+        t_a = MT.states[temp];
         while (t_a != NULL)
         {
             t_b = t_a->next;
@@ -139,6 +128,11 @@ int main()
     }
     // Free memory used by states
     free(MT.states);
+    while(finals != NULL){
+        temp_final = finals->next;
+        free(finals);
+        finals = temp_final;
+    } // Free memory used to store final states
     return 0;
 }
 
@@ -150,8 +144,8 @@ void parse()
 
     // Initialize MT
     MT.size = 1;
-    MT.states = (state *)malloc(sizeof(state));
-    MT.states[0].transitions = NULL;
+    MT.states = (transition **)malloc(sizeof(transition *));
+    MT.states[0] = NULL;
 
     // Read input until end
     scan_result = scanf("%d %c %c %c %d", &t_start, &t_in, &t_out, &t_mv, &t_end);
@@ -163,12 +157,11 @@ void parse()
         {
             old_size = MT.size;
             MT.size = temp;
-            MT.states = (state *)realloc(MT.states, temp * sizeof(state));
+            MT.states = (transition **)realloc(MT.states, temp * sizeof(transition *));
             // Initialize transitions to null
             while (old_size < MT.size)
             {
-                MT.states[old_size].transitions = NULL;
-                MT.states[old_size].final = false;
+                MT.states[old_size] = NULL;
                 old_size++;
             }
         }
@@ -182,14 +175,12 @@ void parse()
         new_tr->next = NULL;
 
         // Check if already exists a state
-        temp_tr = MT.states[t_start].transitions;
-        // If a state already exists insert the new one at the head
-        if (temp_tr != NULL)
-            new_tr->next = temp_tr;
+        temp_tr = MT.states[t_start];
+        // Insert the new state at the head
+        new_tr->next = temp_tr;
 
         // Save data in ht
-        MT.states[t_start].final = false;
-        MT.states[t_start].transitions = new_tr;
+        MT.states[t_start] = new_tr;
 
         // Read input
         scan_result = scanf("%d %c %c %c %d", &t_start, &t_in, &t_out, &t_mv, &t_end);
@@ -260,13 +251,23 @@ void simulate()
             {
                 q_val = dequeue(&COMP_QUEUE); // Get a computation from queue
 
+                // Check if I am in a final state
+                accepted = check_final(q_val->comp.state);
+                if (accepted)
+                {
+                    // Delete tape
+                    delete_tape(q_val->comp.tape);
+                    free(q_val);
+                    goto simulation_end;
+                }
+
                 in = q_val->comp.tape->val; // Get the character under the cursor
 
                 fork_flag = 0; // Reset fork flag
                 if (q_val->comp.state >= MT.size)
                     t_temp = NULL;
                 else
-                    t_temp = MT.states[q_val->comp.state].transitions; // Get state transations
+                    t_temp = MT.states[q_val->comp.state]; // Get state transations
                 // Count how many transitions can handle the input
                 while (t_temp != NULL)
                 {
@@ -279,6 +280,8 @@ void simulate()
                 if (q_val->comp.steps > MAX_MV)
                 {
                     mv_overflow = true;
+                    delete_tape(q_val->comp.tape);
+                    free(q_val);
                     goto simulation_end;
                 }
 
@@ -286,19 +289,14 @@ void simulate()
                 {
                     // No transition can handle the input.
                     // Check if I am in a final state
-                    accepted = q_val->comp.state >= MT.size ? false : MT.states[q_val->comp.state].final;
-
                     delete_tape(q_val->comp.tape); // Delete tape of computation
                     free(q_val);                   // Delete computation
-
-                    if (accepted == true)
-                        goto simulation_end; // If I am in a final state end simulation
                 }
                 else
                 {
                     // The first transition I encounter is the evolution of the current one
                     // The other transitions are added to queue
-                    t_temp = MT.states[q_val->comp.state].transitions;
+                    t_temp = MT.states[q_val->comp.state];
                     // Find the first suitable transition
                     while (t_temp != NULL && t_temp->in != in)
                         t_temp = t_temp->next;
@@ -352,7 +350,7 @@ void simulate()
                     }
 
                     // Get transitions root
-                    t_temp = MT.states[q_val->comp.state].transitions;
+                    t_temp = MT.states[q_val->comp.state];
                     // Find the first suitable transition
                     while (t_temp != NULL && t_temp->in != in)
                         t_temp = t_temp->next;
@@ -419,6 +417,19 @@ void simulate()
 
         in = getchar();
     }
+}
+
+bool check_final(int state)
+{
+    f_state *temp;
+    temp = finals;
+    while (temp != NULL)
+    {
+        if (temp->val == state)
+            return true;
+        temp = temp->next;
+    }
+    return false;
 }
 
 void copy_tape(tape_cell *dest, tape_cell *src)
