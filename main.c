@@ -2,16 +2,8 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
-#define CONFIG_DIM 3
+#define CONFIG_DIM 4
 #define BLANK '_'
-
-// Define directions as enum in order to use them in sums
-typedef enum
-{
-    L,
-    S,
-    R
-} dir;
 
 // Transition representation
 typedef struct transition
@@ -19,7 +11,7 @@ typedef struct transition
     int target;
     char in;
     char out;
-    dir move;
+    char move;
     struct transition *next;
 } transition;
 
@@ -85,8 +77,7 @@ f_state *finals = NULL; // List of final states
 
 int main()
 {
-    char temp_input[CONFIG_DIM]; // Buffer to recognize input delimiters
-    int scan_result;
+    char *temp_input = malloc(CONFIG_DIM * sizeof(char)); // Buffer to recognize input delimiters
     int acc, temp;
     transition *t_a, *t_b;
     f_state *temp_final;
@@ -97,22 +88,23 @@ int main()
 
     // Read final states
     scanf("%s", temp_input);
-    scan_result = scanf("%d", &acc);
-    while (scan_result)
+    temp = scanf("%d", &acc);
+    while (temp)
     {
         temp_final = (f_state *)malloc(sizeof(f_state));
         temp_final->val = acc;
         temp_final->next = finals;
         finals = temp_final;
-        scan_result = scanf("%d", &acc);
+        temp = scanf("%d", &acc);
     }
 
     // Read maximum number of moves
     scanf("%s", temp_input);
     scanf("%d", &MAX_MV);
 
-    //Start reading strings
+    //Start reading stringsyyyy
     scanf("%s\n", temp_input);
+    free(temp_input);
     simulate();
 
     // Free memory used by transitions
@@ -170,7 +162,7 @@ void parse()
         new_tr = (transition *)malloc(sizeof(transition));
         new_tr->in = t_in;
         new_tr->out = t_out;
-        new_tr->move = t_mv == 'L' ? 0 : t_mv == 'S' ? 1 : 2;
+        new_tr->move = t_mv;
         new_tr->target = t_end;
         new_tr->next = NULL;
 
@@ -304,15 +296,14 @@ void simulate()
                             t_temp = t_temp->next; // Find a suitable transition
 
                         forked_comp = (qn *)malloc(sizeof(qn));                          // Create new computation
-                        forked_comp->comp.tape = (tape_cell *)malloc(sizeof(tape_cell)); // Allocate memory for forked tape (one cell)
+                        forked_comp->comp.tape = (tape_cell *)malloc(sizeof(tape_cell)); // Allocate memory for forked tape (one cel)
                         copy_tape(forked_comp->comp.tape, currrent_comp->comp.tape);     // Copy input tape
 
                         forked_comp->comp.tape->val = t_temp->out; // Write to tape
 
-                        forked_comp->comp.steps = currrent_comp->comp.steps; // (Steps of father are already incremented by 1
-
+                        forked_comp->comp.steps = currrent_comp->comp.steps; // (Steps of father are already incremented by 1)
                         // Move cursor, and also check wheter I need to allocate new memory
-                        if (t_temp->move == 0)
+                        if (t_temp->move == 'L')
                         { // LEFT
                             if (forked_comp->comp.tape->left == NULL)
                             {
@@ -324,7 +315,7 @@ void simulate()
                             }
                             forked_comp->comp.tape = forked_comp->comp.tape->left; // Move cursor
                         }
-                        else if (t_temp->move == 2)
+                        else if (t_temp->move == 'R')
                         { // RIGHT
                             if (forked_comp->comp.tape->right == NULL)
                             {
@@ -356,7 +347,7 @@ void simulate()
                     // If I remain still, do nothing
                     // Check if I am at the edge of the tape
                     // In case allocate memory to store a new cell
-                    if (t_temp->move == 0)
+                    if (t_temp->move == 'L')
                     { // LEFT
                         if (currrent_comp->comp.tape->left == NULL)
                         {
@@ -368,7 +359,7 @@ void simulate()
                         }
                         currrent_comp->comp.tape = currrent_comp->comp.tape->left; // Move cursor
                     }
-                    else if (t_temp->move == 2)
+                    else if (t_temp->move == 'R')
                     { // RIGHT
                         if (currrent_comp->comp.tape->right == NULL)
                         {
