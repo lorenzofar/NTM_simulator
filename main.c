@@ -2,7 +2,8 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
-#define CONFIG_DIM 4
+#define CONFIG_DIM 3
+#define BLOCK_SIZE 15
 #define BLANK '_'
 
 // Transition representation
@@ -23,17 +24,19 @@ typedef struct
 } ht;
 
 // Tape representation
-typedef struct tape_cell
+typedef struct tape_block
 {
-    struct tape_cell *left;
-    struct tape_cell *right;
-    char val;
-} tape_cell;
+    struct tape_block *left;
+    struct tape_block *right;
+    char pos;
+    char cells[BLOCK_SIZE];
+} tape_block;
 
 // Representation of a computation
 typedef struct computation
 {
-    tape_cell *tape;
+    tape_block *tape;
+    char block_pos;
     int state;
     int steps;
 } computation;
@@ -41,8 +44,9 @@ typedef struct computation
 // Functions prototypes
 void parse();
 void simulate();
-void copy_tape(tape_cell *dest, tape_cell *src);
-void delete_tape(tape_cell *tape);
+void copy_tape(tape_block *dest, tape_block *src);
+void delete_tape(tape_block *tape);
+void fill_tape(char *tape);
 bool check_final(int state);
 void fork_computation();
 
@@ -77,7 +81,7 @@ f_state *finals = NULL; // List of final states
 
 int main()
 {
-    char *temp_input = malloc(CONFIG_DIM * sizeof(char)); // Buffer to recognize input delimiters
+    char temp_input[CONFIG_DIM]; // Buffer to recognize input delimiters
     int acc, temp;
     transition *t_a, *t_b;
     f_state *temp_final;
@@ -104,7 +108,6 @@ int main()
 
     //Start reading stringsyyyy
     scanf("%s\n", temp_input);
-    free(temp_input);
     simulate();
 
     // Free memory used by transitions
@@ -177,13 +180,14 @@ void parse()
 void simulate()
 {
     int i, j, cursor_helper, sys_clk, limit, fork_flag, current_state;
+    char block_pos;
     char in;
     queue COMP_QUEUE;
     bool accepted, mv_overflow;
-    qn *forked_comp, *currrent_comp;
+    qn *forked_comp, *current_comp;
     transition *t_temp;
 
-    tape_cell *cell, *cursor;
+    tape_block *block, *current_block;
 
     in = getchar();
     while (in != EOF)
@@ -193,35 +197,43 @@ void simulate()
         COMP_QUEUE.head = COMP_QUEUE.tail = NULL;
 
         // Add first computation (root) to the computations queue
-        currrent_comp = (qn *)malloc(sizeof(qn));                                // Allocate memory to store computation
-        currrent_comp->comp.tape = (tape_cell *)malloc(sizeof(tape_cell));       // Allocate memory to store tape (just one tape)
-        currrent_comp->comp.tape->left = currrent_comp->comp.tape->right = NULL; // Set tape bounds
-        currrent_comp->comp.state = 0;                                           // Set starting state
-        currrent_comp->comp.steps = 0;                                           // Initialize steps counter
+        current_comp = (qn *)malloc(sizeof(qn));                               // Allocate memory to store computation
+        current_comp->comp.tape = (tape_block *)malloc(sizeof(tape_block));    // Allocate memory to store tape (just one tape)
+        current_comp->comp.tape->left = current_comp->comp.tape->right = NULL; // Set tape bounds
+        current_comp->comp.state = 0;                                          // Set starting state
+        current_comp->comp.steps = 0;                                          // Initialize steps counter
 
         // While reading tape, every time i read a character allocate a new tape cell
         // If I exceed the maximum number of moves, stop reading (read trailing characters then)
-        i = 0;                                        // Track tape size
-        cursor = currrent_comp->comp.tape;            // Set cursor to tape start
+        i = 0;
+        block_pos = 0;                                // Track tape size
+        current_block = current_comp->comp.tape;      // Set cursor to tape start
+        fill_tape(current_block->cells);              // Initialize tape
         while (in != '\n' && in != -1 && i <= MAX_MV) // Limit the tape size to the maximum number of moves
         {
-            cursor->val = in;                              // Write the current character to tape
-            cell = (tape_cell *)malloc(sizeof(tape_cell)); // Create a new cell
-            cell->val = BLANK;                             // Initialize cell with blank character
-            cell->right = NULL;                            // Set cell bounds
-            cell->left = cursor;                           // Point to the current cursor
-            cursor->right = cell;                          // Link tape with cell
-            cursor = cell;                                 // Update cursor
-            i++;                                           // Increase size counter
-            in = getchar();                                // Read next character
+            current_block->cells[block_pos] = in; // Write the current character to tape
+            block_pos++;                          // Increase position inside block
+            if (block_pos == BLOCK_SIZE)          // Check if I reached the end of the block
+            {
+                block = (tape_block *)malloc(sizeof(tape_block)); // Create a new block
+                block->right = NULL;                              // Set right of block to NULL
+                block->left = current_block;                      // Link new block with current block
+                current_block->right = block;                     // Link current block with new block
+                fill_tape(block->cells);                          // Initialize tape with blank characters
+                current_block = block;                            // Update current block
+                block_pos = 0;                                    // Set cursor at beginning of block
+            }
+            i++;
+            in = getchar(); // Read next character
         }
+        block_pos = current_comp->comp.block_pos = 0; // Set position in block of computation
 
         // Finish reading the string if there are trailing characters
         if (in != '\n' && in != -1)
             while (in != '\n' && in != -1)
                 in = getchar();
 
-        enqueue(&COMP_QUEUE, currrent_comp); // Add computation to queue
+        enqueue(&COMP_QUEUE, current_comp); // Add computation to queue
 
         accepted = false;    // Initialize accepted flag
         mv_overflow = false; // Initialize computation overflow flag
@@ -236,19 +248,20 @@ void simulate()
             limit = COMP_QUEUE.size;
             for (i = 0; i < limit; i++)
             {
-                currrent_comp = dequeue(&COMP_QUEUE); // Get a computation from queue
-                current_state = currrent_comp->comp.state;
+                current_comp = dequeue(&COMP_QUEUE); // Get a computation from queue
+                current_state = current_comp->comp.state;
                 // Check if I am in a final state
                 accepted = check_final(current_state);
                 if (accepted)
                 {
                     // Delete tape
-                    delete_tape(currrent_comp->comp.tape);
-                    free(currrent_comp);
+                    delete_tape(current_comp->comp.tape);
+                    free(current_comp);
                     goto simulation_end;
                 }
 
-                in = currrent_comp->comp.tape->val; // Get the character under the cursor
+                block_pos = current_comp->comp.block_pos;       // Get the position inside block
+                in = current_comp->comp.tape->cells[block_pos]; // Get the character under the cursor
 
                 fork_flag = 0; // Reset fork flag
                 if (current_state >= MT.size)
@@ -265,19 +278,19 @@ void simulate()
                 // Check if I reached the limit of simulation steps
                 // If I find an overflow here, it means that in the previous step no computation accepted the string
                 // So it's safe to end the simulation and print U
-                if (currrent_comp->comp.steps > MAX_MV)
+                if (current_comp->comp.steps > MAX_MV)
                 {
                     mv_overflow = true;
-                    delete_tape(currrent_comp->comp.tape);
-                    free(currrent_comp);
+                    delete_tape(current_comp->comp.tape);
+                    free(current_comp);
                     goto simulation_end;
                 }
 
                 if (!fork_flag)
                 {
                     // No transition can handle the input.
-                    delete_tape(currrent_comp->comp.tape); // Delete tape of computation
-                    free(currrent_comp);                   // Delete computation
+                    delete_tape(current_comp->comp.tape); // Delete tape of computation
+                    free(current_comp);                   // Delete computation
                 }
                 else
                 {
@@ -292,91 +305,114 @@ void simulate()
                     // Fork the remaining transitions
                     for (j = 1; j < fork_flag; j++)
                     {
+                        block_pos = current_comp->comp.block_pos;
                         while (t_temp != NULL && t_temp->in != in)
                             t_temp = t_temp->next; // Find a suitable transition
 
-                        forked_comp = (qn *)malloc(sizeof(qn));                          // Create new computation
-                        forked_comp->comp.tape = (tape_cell *)malloc(sizeof(tape_cell)); // Allocate memory for forked tape (one cel)
-                        copy_tape(forked_comp->comp.tape, currrent_comp->comp.tape);     // Copy input tape
+                        forked_comp = (qn *)malloc(sizeof(qn));                            // Create new computation
+                        forked_comp->comp.tape = (tape_block *)malloc(sizeof(tape_block)); // Allocate memory for forked tape (one cell)
+                        copy_tape(forked_comp->comp.tape, current_comp->comp.tape);        // Copy input tape
 
-                        forked_comp->comp.tape->val = t_temp->out; // Write to tape
+                        forked_comp->comp.tape->cells[block_pos] = t_temp->out; // Write to tape
 
-                        forked_comp->comp.steps = currrent_comp->comp.steps; // (Steps of father are already incremented by 1)
+                        forked_comp->comp.steps = current_comp->comp.steps; // (Steps of father are already incremented by 1)
                         // Move cursor, and also check wheter I need to allocate new memory
                         if (t_temp->move == 'L')
-                        { // LEFT
-                            if (forked_comp->comp.tape->left == NULL)
-                            {
-                                cell = (tape_cell *)malloc(sizeof(tape_cell));
-                                cell->left = NULL;
-                                cell->val = BLANK;
-                                cell->right = forked_comp->comp.tape;
-                                forked_comp->comp.tape->left = cell;
+                            if (block_pos == 0)
+                            { // I need to change block
+                                if (forked_comp->comp.tape->left == NULL)
+                                { // I need to create a new block
+                                    block = (tape_block *)malloc(sizeof(tape_block));
+                                    block->left = NULL;
+                                    block->right = current_block;
+                                    fill_tape(block->cells);
+                                    forked_comp->comp.tape->left = block;
+                                }
+                                forked_comp->comp.tape = forked_comp->comp.tape->left; // Update current block
+                                block_pos = BLOCK_SIZE - 1;                            // Update block position
                             }
-                            forked_comp->comp.tape = forked_comp->comp.tape->left; // Move cursor
-                        }
+                            else
+                                block_pos--;
                         else if (t_temp->move == 'R')
-                        { // RIGHT
-                            if (forked_comp->comp.tape->right == NULL)
+                        {                                    // RIGHT
+                            if (block_pos == BLOCK_SIZE - 1) // I need to change block
                             {
-                                cell = (tape_cell *)malloc(sizeof(tape_cell));
-                                cell->right = NULL;
-                                cell->val = BLANK;
-                                cell->left = forked_comp->comp.tape;
-                                forked_comp->comp.tape->right = cell;
+                                if (forked_comp->comp.tape->right == NULL)
+                                { // Create new block
+                                    block = (tape_block *)malloc(sizeof(tape_block));
+                                    block->right = NULL;
+                                    block->left = current_block;
+                                    fill_tape(block->cells);
+                                    forked_comp->comp.tape->right = block;
+                                }
+                                forked_comp->comp.tape = forked_comp->comp.tape->right;
+                                block_pos = 0;
                             }
-                            forked_comp->comp.tape = forked_comp->comp.tape->right; // Move cursor
+                            else
+                                block_pos++;
                         }
 
                         forked_comp->comp.state = t_temp->target; // Change state
-
+                        forked_comp->comp.block_pos = block_pos;  // Update position in block
                         // Put computation in queue
                         enqueue(&COMP_QUEUE, forked_comp);
                         t_temp = t_temp->next; // Go to next transition
                     }
 
                     // Get transitions root
-                    t_temp = MT.states[currrent_comp->comp.state];
+                    t_temp = MT.states[current_comp->comp.state];
                     // Find the first suitable transition
                     while (t_temp != NULL && t_temp->in != in)
                         t_temp = t_temp->next;
 
-                    currrent_comp->comp.tape->val = t_temp->out; // Write tape
+                    block_pos = current_comp->comp.block_pos;
+                    current_comp->comp.tape->cells[block_pos] = t_temp->out; // Write tape
 
                     // Check direction
                     // If I remain still, do nothing
                     // Check if I am at the edge of the tape
                     // In case allocate memory to store a new cell
                     if (t_temp->move == 'L')
-                    { // LEFT
-                        if (currrent_comp->comp.tape->left == NULL)
-                        {
-                            cell = (tape_cell *)malloc(sizeof(tape_cell));
-                            cell->right = currrent_comp->comp.tape;
-                            cell->left = NULL;
-                            cell->val = BLANK;
-                            currrent_comp->comp.tape->left = cell;
+                        if (block_pos == 0)
+                        { // I need to change block
+                            if (current_comp->comp.tape->left == NULL)
+                            { // I need to create a new block
+                                block = (tape_block *)malloc(sizeof(tape_block));
+                                block->left = NULL;
+                                block->right = current_comp->comp.tape;
+                                fill_tape(block->cells);
+                                current_comp->comp.tape->left = block;
+                            }
+                            current_comp->comp.tape = current_comp->comp.tape->left; // Update current block
+                            block_pos = BLOCK_SIZE - 1;                              // Update block position
                         }
-                        currrent_comp->comp.tape = currrent_comp->comp.tape->left; // Move cursor
-                    }
+                        else
+                            block_pos--;
                     else if (t_temp->move == 'R')
-                    { // RIGHT
-                        if (currrent_comp->comp.tape->right == NULL)
+                    {                                    // RIGHT
+                        if (block_pos == BLOCK_SIZE - 1) // I need to change block
                         {
-                            cell = (tape_cell *)malloc(sizeof(tape_cell));
-                            cell->left = currrent_comp->comp.tape;
-                            cell->right = NULL;
-                            cell->val = BLANK;
-                            currrent_comp->comp.tape->right = cell;
+                            if (current_comp->comp.tape->right == NULL)
+                            { // Create new block
+                                block = (tape_block *)malloc(sizeof(tape_block));
+                                block->right = NULL;
+                                block->left = current_comp->comp.tape;
+                                fill_tape(block->cells);
+                                current_comp->comp.tape->right = block;
+                            }
+                            current_comp->comp.tape = current_comp->comp.tape->right;
+                            block_pos = 0;
                         }
-                        currrent_comp->comp.tape = currrent_comp->comp.tape->right; // Move cursor
+                        else
+                            block_pos++;
                     }
 
-                    currrent_comp->comp.state = t_temp->target; // Change state
-                    currrent_comp->comp.steps++;                // Update computation steps
+                    current_comp->comp.state = t_temp->target; // Change state
+                    current_comp->comp.steps++;                // Update computation steps
+                    current_comp->comp.block_pos = block_pos;  // Update position in block
 
                     // Put computation back in queue
-                    enqueue(&COMP_QUEUE, currrent_comp);
+                    enqueue(&COMP_QUEUE, current_comp);
                 }
             }
         }
@@ -418,19 +454,29 @@ bool check_final(int state)
     return false;
 }
 
-void copy_tape(tape_cell *dest, tape_cell *src)
+void copy_cells(char *dest, char *src)
 {
-    tape_cell *temp_s, *temp_d, *new;
-    dest->val = src->val;
+    char i;
+    for (i = 0; i < BLOCK_SIZE; i++)
+        dest[i] = src[i];
+}
+
+void copy_tape(tape_block *dest, tape_block *src)
+{
+    tape_block *temp_s, *temp_d, *new;
+
+    // Copy the stuff in central block
+    copy_cells(dest->cells, src->cells);
+
     dest->left = dest->right = NULL;
     temp_s = src->left;
     temp_d = dest;
     while (temp_s != NULL)
     {
-        new = (tape_cell *)malloc(sizeof(tape_cell)); // Allocate new cell
-        new->left = NULL;                             // Set left / right pointers
+        new = (tape_block *)malloc(sizeof(tape_block)); // Allocate new cell
+        new->left = NULL;                               // Set left / right pointers
         new->right = temp_d;
-        new->val = temp_s->val; // Write content
+        copy_cells(new->cells, temp_s->cells);
         temp_d->left = new;
         temp_d = temp_d->left; // Move
         temp_s = temp_s->left;
@@ -439,19 +485,19 @@ void copy_tape(tape_cell *dest, tape_cell *src)
     temp_d = dest;
     while (temp_s != NULL)
     {
-        new = (tape_cell *)malloc(sizeof(tape_cell)); // Allocate new cell
-        new->right = NULL;                            // Set left / right pointers
+        new = (tape_block *)malloc(sizeof(tape_block)); // Allocate new cell
+        new->right = NULL;                              // Set left / right pointers
         new->left = temp_d;
-        new->val = temp_s->val; // Write content
+        copy_cells(new->cells, temp_s->cells);
         temp_d->right = new;
         temp_d = temp_d->right; // Move
         temp_s = temp_s->right;
     }
 }
 
-void delete_tape(tape_cell *tape)
+void delete_tape(tape_block *tape)
 {
-    tape_cell *temp, *helper;
+    tape_block *temp, *helper;
     temp = tape;
     while (temp->left != NULL)
         temp = temp->left; // Get the leftmost element
@@ -461,6 +507,13 @@ void delete_tape(tape_cell *tape)
         free(temp);
         temp = helper;
     }
+}
+
+void fill_tape(char *tape)
+{
+    char i;
+    for (i = 0; i < BLOCK_SIZE; i++)
+        tape[i] = BLANK;
 }
 
 // Functions to manage queue
