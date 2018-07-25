@@ -60,7 +60,7 @@ qn *dequeue(queue *Q);
 void enqueue(queue *Q, qn *item);
 
 ht MT;           // Define the machine as a global variable
-int MAX_MV;      // Container for maximum steps
+unsigned int MAX_MV;      // Container for maximum steps
 bool *finals;    // List of final states
 int finals_size; // Size of final states
 
@@ -96,7 +96,7 @@ int main()
     }
 
     scanf("%s", temp_input); // Parse delimiter
-    scanf("%d", &MAX_MV);    // Read maximum number of moves
+    scanf("%u", &MAX_MV);    // Read maximum number of moves
 
     scanf("%s\n", temp_input); // Start reading strings
     simulate();                                 // Start simulation
@@ -174,7 +174,6 @@ void simulate()
     in = getchar();
     while (in != EOF)
     {
-        printf("first char: %c - %d\n", in, in);
         // Initialize computations queue
         COMP_QUEUE.size = 0;
         COMP_QUEUE.head = COMP_QUEUE.tail = NULL;
